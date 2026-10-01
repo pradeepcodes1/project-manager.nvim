@@ -72,6 +72,12 @@ function M.open_directory()
 					if project_state.is_open() then
 						sessions.save_session(nil, { show_message = false })
 					end
+					-- A session restored by name (an editor launched outside its root, like
+					-- Neovide from the Dock) keeps answering save_session(nil) after a
+					-- noautocmd cd, which overwrote that project with this root. Forget it
+					-- the way auto-session's own DirChangedPre does, so the save below names
+					-- the new session after this root.
+					vim.v.this_session = ""
 					vim.cmd({ cmd = "cd", args = { root }, mods = { noautocmd = true } })
 					vim.cmd.enew()
 					project_state.set_open(true, root)
