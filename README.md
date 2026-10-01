@@ -5,7 +5,8 @@ Personal Neovim plugin, extracted from my dotfiles: project roots and sessions
 LSP queries (workspace symbols and diagnostics across every server rooted in
 the project, not only the current buffer's).
 
-Requires auto-session, snacks.nvim, fff and yazi.nvim.
+Requires Neovim 0.12+ (`vim.lsp.get_configs`, `vim.lsp.buf.workspace_diagnostics`),
+auto-session, snacks.nvim, fff and yazi.nvim.
 
 ```lua
 { dir = "~/code/project-manager.nvim", lazy = false, dependencies = { ... } }

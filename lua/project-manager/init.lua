@@ -1,10 +1,21 @@
 local M = {}
 
 local project_state = require("project-manager.state")
+local path_util = require("project-manager.util.path")
 
 function M.setup()
 	require("project-manager.servers").setup()
 	project_state.set_open(false)
+
+	-- The session pickers rely on this: they mark stale entries but offer no
+	-- cleanup action of their own.
+	vim.api.nvim_create_autocmd("VimEnter", {
+		desc = "Prune sessions whose project directory is gone",
+		once = true,
+		callback = function()
+			require("project-manager.actions.pruner").prune_stale_sessions({ notify = false })
+		end,
+	})
 
 	vim.api.nvim_create_autocmd("VimEnter", {
 		desc = "Restore a project explicitly launched by the project picker",
@@ -16,7 +27,7 @@ function M.setup()
 			if directory and directory ~= "" then
 				vim.env.NVIM_PROJECT_SESSION = nil
 				vim.schedule(function()
-					local root = require("project-manager.util.path").normalize(directory)
+					local root = path_util.normalize(directory)
 					if not root or vim.fn.isdirectory(root) ~= 1 then
 						vim.notify("Project directory does not exist", vim.log.levels.ERROR)
 						return
@@ -24,7 +35,9 @@ function M.setup()
 					vim.cmd({ cmd = "cd", args = { root }, mods = { noautocmd = true } })
 					local sessions = require("auto-session")
 					if project_state.session_exists(root) then
-						sessions.restore_session(nil, { show_message = false })
+						if sessions.restore_session(nil, { show_message = false }) then
+							project_state.set_open(true, root)
+						end
 					else
 						vim.cmd.enew()
 						project_state.set_open(true, root)
@@ -37,7 +50,7 @@ function M.setup()
 			local requested_session = vim.env.NVIM_PROJECT_SESSION
 			if requested_session and requested_session ~= "" then
 				vim.env.NVIM_PROJECT_SESSION = nil
-				project_state.set_open(true, requested_session:match("^([^|]+)"))
+				project_state.set_open(true, (path_util.parse_session_name(requested_session)))
 				vim.schedule(function()
 					if
 						not require("auto-session").restore_session(

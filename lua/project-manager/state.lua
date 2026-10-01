@@ -54,21 +54,25 @@ end
 -- the legacy filename format folded in. Reading the list is what the session
 -- picker does; rebuilding the on-disk name here instead meant depending on
 -- auto-session's private escaping and its legacy fallback.
-function M.session_exists(root)
+function M.find_session(root)
 	root = path_util.normalize(root)
 	if not root then
-		return false
+		return nil
 	end
 
 	local branch = cli.git_branch(root) or ""
 	for _, entry in ipairs(M.session_list()) do
-		local entry_root, entry_branch = entry.session_name:match("^([^|]*)|?(.*)$")
-		if path_util.normalize(entry_root) == root and entry_branch == branch then
-			return true
+		local entry_root, entry_branch = path_util.parse_session_name(entry.session_name)
+		if entry_root == root and entry_branch == branch then
+			return entry
 		end
 	end
 
-	return false
+	return nil
+end
+
+function M.session_exists(root)
+	return M.find_session(root) ~= nil
 end
 
 return M

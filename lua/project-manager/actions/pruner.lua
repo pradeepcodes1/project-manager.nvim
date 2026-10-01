@@ -1,10 +1,11 @@
 local M = {}
 
 local project_state = require("project-manager.state")
+local path_util = require("project-manager.util.path")
 -- An inaccessible directory is not evidence that its saved session should be
 -- removed, so only paths that definitely no longer resolve count as stale.
 function M.stale_session(item)
-	local root = item.session_name:match("^([^|]+)")
+	local root = path_util.parse_session_name(item.session_name)
 	if not root then
 		return false
 	end

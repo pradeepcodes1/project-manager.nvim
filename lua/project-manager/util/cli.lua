@@ -62,12 +62,6 @@ function M.git_branch(root)
 	return M.git(root, "rev-parse", "--abbrev-ref", "HEAD")
 end
 
---- The worktree root, which is not the project root: from a subdirectory
---- onefetch reports the whole repository while tokei counts only the subtree.
-function M.git_toplevel(root)
-	return M.git(root, "rev-parse", "--show-toplevel")
-end
-
 function M.has(name)
 	return vim.fn.executable(name) == 1
 end
@@ -106,15 +100,6 @@ end
 function M.kitty_argv(root, title, ...)
 	return vim.list_extend({ "kitty", "--detach", "--directory", root, "--title", title }, { ... })
 end
-
---- Terminal escapes, so a tool's colored output lands as text. NO_COLOR is set
---- for these too; this is the belt to that pair of braces.
-function M.strip_ansi(text)
-	return (text:gsub("\27%[[%d;?]*[ -/]*[@-~]", ""):gsub("\27%][^\7]*\7", ""))
-end
-
---- Environment for a tool whose output is about to be read rather than shown.
-M.no_color = { NO_COLOR = "1" }
 
 --- Every file rg will admit to, NUL-separated, with the directories no server
 --- wants to index pruned. Not `--files-with-matches`: the point is the file

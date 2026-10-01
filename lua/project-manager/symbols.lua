@@ -30,21 +30,7 @@ function M.include_file(file)
 end
 
 function M.clients(root)
-	local clients = {}
-	for _, client in ipairs(vim.lsp.get_clients()) do
-		local belongs = false
-		for path in pairs(path_util.client_roots(client)) do
-			belongs = belongs or path_util.under(path, root) or path_util.under(root, path)
-		end
-		if
-			belongs
-			and client.initialized
-			and not client:is_stopped()
-			and client:supports_method("workspace/symbol")
-		then
-			clients[#clients + 1] = client
-		end
-	end
+	local clients = path_util.root_clients(root, "workspace/symbol")
 	table.sort(clients, function(a, b)
 		return a.name == b.name and a.id < b.id or a.name < b.name
 	end)

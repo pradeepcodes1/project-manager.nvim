@@ -4,19 +4,24 @@ local M = {}
 local methods = vim.lsp.protocol.Methods or {}
 local workspace_diagnostic_method = methods.workspace_diagnostic or "workspace/diagnostic"
 
-local function workspace_clients()
-	local clients = vim.lsp.get_clients({ bufnr = 0, method = workspace_diagnostic_method })
-	if #clients > 0 then
-		return clients
+-- Every server rooted in the project, not only the foreground buffer's: a Go
+-- buffer must still pull pyright's diagnostics. Never every client in the
+-- editor either, or a server rooted in another project does a full workspace
+-- pull for results the picker then filters away. No root, no project: only
+-- the buffer's own servers.
+local function workspace_clients(root)
+	if not root then
+		return vim.lsp.get_clients({ bufnr = 0, method = workspace_diagnostic_method })
 	end
 
-	return vim.lsp.get_clients({ method = workspace_diagnostic_method })
+	return require("project-manager.util.path").root_clients(root, workspace_diagnostic_method)
 end
 
 -- Diagnostics for files nobody has opened exist only after a workspace pull.
 -- Without this the project view shows the open buffers and calls it a project.
-function M.refresh_workspace()
-	local clients = workspace_clients()
+function M.refresh_workspace(root)
+	root = root or require("project-manager.paths").current_root()
+	local clients = workspace_clients(root)
 	for _, client in ipairs(clients) do
 		vim.lsp.buf.workspace_diagnostics({ client_id = client.id })
 	end
@@ -25,9 +30,9 @@ function M.refresh_workspace()
 end
 
 function M.show_workspace()
-	local project_paths = require("project-manager.paths")
-	M.refresh_workspace()
-	Snacks.picker.diagnostics({ filter = { cwd = project_paths.current_root() } })
+	local root = require("project-manager.paths").current_root()
+	M.refresh_workspace(root)
+	Snacks.picker.diagnostics({ filter = { cwd = root } })
 end
 
 function M.show_buffer()

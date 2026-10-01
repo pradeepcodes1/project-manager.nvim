@@ -106,6 +106,22 @@ local function cancel()
 	for buf in pairs(run.probes) do
 		release(run, buf, true)
 	end
+	-- Seeds outlive their probe so tsserver keeps each project open, but not
+	-- the project. Still in `seeds` means never entered; a modified or shown
+	-- one holds a workspace edit or a view the user has not finished with.
+	for buf in pairs(run.seeds) do
+		if
+			seeds[buf]
+			and vim.api.nvim_buf_is_valid(buf)
+			and not vim.bo[buf].modified
+			and #vim.fn.win_findbuf(buf) == 0
+		then
+			seeds[buf] = nil
+			quiet(function()
+				vim.api.nvim_buf_delete(buf, { force = true })
+			end)
+		end
+	end
 	active = nil
 end
 
@@ -165,6 +181,11 @@ local function start(run, config, root, file, ft)
 		entry.seed_roots[seed_root] = true
 		if needs_events then
 			seeds[buf] = true
+			-- Only a buffer probe() created is ours to delete on cancel; an
+			-- unloaded one the session listed stays in the buffer list.
+			if run.probes[buf] then
+				run.seeds[buf] = true
+			end
 			run.probes[buf] = nil
 		end
 	else
@@ -328,7 +349,7 @@ function M.project_changed(root)
 		return
 	end
 	local enabled, err = M.enabled(root)
-	local run = { root = root, probes = {}, entries = {}, skipped = {}, status = err or "disabled" }
+	local run = { root = root, probes = {}, seeds = {}, entries = {}, skipped = {}, status = err or "disabled" }
 	active = run
 	if not enabled then
 		return

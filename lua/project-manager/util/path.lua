@@ -1,39 +1,6 @@
 -- one spelling of the path questions every module here ends up asking.
 local M = {}
 
-local function parent(path)
-	return path ~= "" and vim.fs.dirname(path) or nil
-end
-
-local function default_homebrew_prefix()
-	if vim.env.HOMEBREW_PREFIX and vim.env.HOMEBREW_PREFIX ~= "" then
-		return vim.env.HOMEBREW_PREFIX
-	end
-
-	local brew = vim.fn.exepath("brew")
-	if brew ~= "" then
-		return parent(parent(brew))
-	end
-
-	if vim.uv.os_uname().sysname == "Darwin" then
-		return vim.uv.os_uname().machine == "arm64" and "/opt/homebrew" or "/usr/local"
-	end
-	return "/home/linuxbrew/.linuxbrew"
-end
-
--- Machine-dependent roots live here with the path constructors that consume them.
-M.homebrew_prefix = default_homebrew_prefix()
-M.applications_dir = vim.env.APPLICATIONS_DIR or "/Applications"
-
-function M.homebrew(path)
-	return vim.fs.joinpath(M.homebrew_prefix, path)
-end
-
-function M.application(name, path)
-	local bundle = name:sub(-4) == ".app" and name or (name .. ".app")
-	return vim.fs.joinpath(M.applications_dir, bundle, path or "")
-end
-
 --- Absolute, symlink-resolved, forward-slashed. nil for anything unusable,
 --- so callers can guard once instead of checking types.
 function M.normalize(path)
@@ -43,6 +10,17 @@ function M.normalize(path)
 
 	local absolute = vim.fn.fnamemodify(path, ":p")
 	return vim.fs.normalize(vim.uv.fs_realpath(absolute) or absolute)
+end
+
+--- auto-session names a session "<root>" or "<root>|<branch>". Returns the
+--- normalized root and the branch, "" when the name carries none.
+function M.parse_session_name(name)
+	if type(name) ~= "string" then
+		return nil, ""
+	end
+
+	local root, branch = name:match("^([^|]*)|?(.*)$")
+	return M.normalize(root), branch
 end
 
 --- vim.fs.normalize only, for paths already known to be absolute and real.
@@ -134,6 +112,24 @@ function M.lsp_roots(bufnr)
 	end
 
 	return roots
+end
+
+--- The live clients supporting `method` that belong to the project at `root`:
+--- rooted inside it, or at a parent that contains it. Not the foreground
+--- buffer's clients, and never every client in the editor.
+function M.root_clients(root, method)
+	local clients = {}
+	for _, client in ipairs(vim.lsp.get_clients()) do
+		local belongs = false
+		for path in pairs(M.client_roots(client)) do
+			belongs = belongs or M.under(path, root) or M.under(root, path)
+		end
+		if belongs and client.initialized and not client:is_stopped() and client:supports_method(method) then
+			clients[#clients + 1] = client
+		end
+	end
+
+	return clients
 end
 
 function M.cwd()

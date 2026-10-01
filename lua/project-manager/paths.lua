@@ -20,7 +20,7 @@ function M.session_root()
 		return nil
 	end
 
-	local root = path_util.normalize(session_name:match("^([^|]+)"))
+	local root = path_util.parse_session_name(session_name)
 	return root and vim.fn.isdirectory(root) == 1 and root or nil
 end
 

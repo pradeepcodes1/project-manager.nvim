@@ -60,13 +60,14 @@ function M.open_directory()
 				-- Ctrl-o selects a project for this editor, so restore it here after Yazi closes.
 				vim.schedule(function()
 					local sessions = require("auto-session")
-					local branch = cli.git_branch(root) or ""
-					for _, entry in ipairs(project_state.session_list()) do
-						local entry_root, entry_branch = entry.session_name:match("^([^|]*)|?(.*)$")
-						if path_util.normalize(entry_root) == root and entry_branch == branch then
-							sessions.autosave_and_restore(entry.session_name)
-							return
+					local entry = project_state.find_session(root)
+					if entry then
+						-- Project mode follows the restore here rather than trusting the
+						-- user's auto-session hooks to switch it, as the fresh branch does.
+						if sessions.autosave_and_restore(entry.session_name) then
+							project_state.set_open(true, root)
 						end
+						return
 					end
 					-- Preserve the current project before making a fresh one in this window.
 					if project_state.is_open() then
@@ -97,7 +98,7 @@ function M.open_session_window(session_name, directory)
 
 	-- Directory launches can create a session; named launches only restore one.
 	local marker = directory and "NVIM_PROJECT_DIRECTORY" or "NVIM_PROJECT_SESSION"
-	local root = directory and session_name or session_name:match("^([^|]+)")
+	local root = directory and session_name or path_util.parse_session_name(session_name)
 	if not root or vim.fn.isdirectory(root) ~= 1 then
 		root = vim.uv.cwd()
 	end
@@ -144,7 +145,11 @@ function M.open_picked_session(session_name)
 	if project_state.is_open() then
 		return M.open_session_window(session_name)
 	end
-	return require("auto-session").autosave_and_restore(session_name)
+	if not require("auto-session").autosave_and_restore(session_name) then
+		return false
+	end
+	project_state.set_open(true, (path_util.parse_session_name(session_name)))
+	return true
 end
 
 -- auto-session's own picker always restores in place. this one routes the
