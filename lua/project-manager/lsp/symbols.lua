@@ -1,9 +1,10 @@
 -- Workspace symbol requests belong to the open project, not the foreground buffer.
 local M = {}
-local project_paths = require("project-manager.paths")
-local project_pickers = require("project-manager.actions.pickers")
-local project_state = require("project-manager.state")
-local path_util = require("project-manager.util.path")
+
+local clients = require("project-manager.lsp.clients")
+local picker = require("project-manager.picker")
+local root = require("project-manager.root")
+local state = require("project-manager.state")
 
 local prose_extensions = {
 	adoc = true,
@@ -21,7 +22,7 @@ local prose_extensions = {
 	txt = true,
 }
 
-function M.include_file(file)
+local function include_file(file)
 	if type(file) ~= "string" or file == "" then
 		return true
 	end
@@ -29,27 +30,19 @@ function M.include_file(file)
 	return extension == nil or not prose_extensions[extension:lower()]
 end
 
-function M.clients(root)
-	local clients = path_util.root_clients(root, "workspace/symbol")
-	table.sort(clients, function(a, b)
-		return a.name == b.name and a.id < b.id or a.name < b.name
-	end)
-	return clients
-end
-
 -- Main-thread request coordinator. Every query owns its requests and deadline;
 -- cancelling a picker never cancels another feature's LSP work.
 --
 -- Symbols arriving without a location range are dropped, not resolved. LSP 3.17
 -- lets a server omit ranges and answer workspaceSymbol/resolve for them, but only
--- when the client declares workspace.symbol.resolveSupport -- which this config
--- deliberately does not. Resolving here could only be eager, one round trip per
--- symbol (4700+ for the empty query fS opens with, measured against lua_ls on
--- this config), to spare the server a bulk computation it performs anyway; and
+-- when the client declares workspace.symbol.resolveSupport -- which Neovim's
+-- client does not. Resolving here could only be eager, one round trip per
+-- symbol (4700+ for the empty query the picker opens with, measured against
+-- lua_ls), to spare the server a bulk computation it performs anyway; and
 -- the whole cascade would sit under the deadline below, so it would time out
 -- rather than merely run slow. Snacks needs a range to preview and jump, so a
 -- rangeless symbol is unusable regardless.
-function M.request(clients, query, emit, done, timeout_ms)
+local function request_symbols(servers, query, emit, done, timeout_ms)
 	local requests, errors = {}, {}
 	-- Starts at 1 so a synchronous reply mid-dispatch cannot complete the batch
 	-- before every client has been sent; the loop drops that sentinel.
@@ -100,7 +93,7 @@ function M.request(clients, query, emit, done, timeout_ms)
 		pending = pending - 1
 		complete()
 	end
-	for _, client in ipairs(clients) do
+	for _, client in ipairs(servers) do
 		local request = { client = client, finished = false }
 		requests[#requests + 1] = request
 		pending = pending + 1
@@ -131,12 +124,12 @@ function M.request(clients, query, emit, done, timeout_ms)
 	end
 end
 
-function M.finder(root)
+local function finder(project_root)
 	return function(_, ctx)
-		local clients = M.clients(root)
+		local servers = clients.for_root(project_root, "workspace/symbol")
 		local names = vim.tbl_map(function(client)
 			return client.name
-		end, clients)
+		end, servers)
 		ctx.picker.title = "Project symbols · " .. (#names > 0 and table.concat(names, ", ") or "no active servers")
 		local lsp = require("snacks.picker.source.lsp")
 		local bufmap = lsp.bufmap()
@@ -156,10 +149,10 @@ function M.finder(root)
 				if async:aborted() then
 					return
 				end
-				cancel = M.request(clients, ctx.filter.search or "", function(client, symbols)
+				cancel = request_symbols(servers, ctx.filter.search or "", function(client, symbols)
 					local items = lsp.results_to_items(client, symbols, { text_with_file = true })
 					for _, item in ipairs(items) do
-						if M.include_file(item.file) then
+						if include_file(item.file) then
 							item.buf = bufmap[item.file]
 							item.tree = false
 							queue[#queue + 1] = item
@@ -202,16 +195,16 @@ end
 
 function M.open()
 	-- Preserve file-only mode's buffer-local server selection and scope.
-	if not project_state.is_open() then
-		return Snacks.picker.lsp_workspace_symbols(project_pickers.picker_scope(project_paths.picker_root()))
+	if not state.is_open() then
+		return Snacks.picker.lsp_workspace_symbols(picker.scope(root.picker()))
 	end
-	local root = project_paths.current_root()
-	if not root then
+	local project_root = root.current()
+	if not project_root then
 		vim.notify("No open project root", vim.log.levels.WARN)
 		return
 	end
-	local opts = project_pickers.picker_scope(root)
-	opts.finder = M.finder(root)
+	local opts = picker.scope(project_root)
+	opts.finder = finder(project_root)
 	-- This Snacks version defers picker teardown but resets finder.task before
 	-- its aborted coroutine necessarily unwinds. Finish that unwind while the
 	-- matcher still exists, so closing during a request cannot touch a nil UI.

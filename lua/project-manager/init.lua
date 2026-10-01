@@ -1,67 +1,43 @@
 local M = {}
 
-local project_state = require("project-manager.state")
-local path_util = require("project-manager.util.path")
+local function create_commands()
+	local function diagnostics(name)
+		return function()
+			require("project-manager.lsp.diagnostics")[name]()
+		end
+	end
+
+	vim.api.nvim_create_user_command("Problems", diagnostics("show_workspace"), { desc = "Workspace diagnostics" })
+	vim.api.nvim_create_user_command("ProblemsBuffer", diagnostics("show_buffer"), { desc = "Buffer diagnostics" })
+	vim.api.nvim_create_user_command(
+		"ProblemsRefresh",
+		diagnostics("refresh_workspace"),
+		{ desc = "Refresh workspace diagnostics" }
+	)
+end
 
 function M.setup()
-	require("project-manager.servers").setup()
-	project_state.set_open(false)
+	require("project-manager.lsp.servers").setup()
+	require("project-manager.state").set_open(false)
+	create_commands()
 
+	local group = vim.api.nvim_create_augroup("ProjectManager", { clear = true })
 	-- The session pickers rely on this: they mark stale entries but offer no
 	-- cleanup action of their own.
 	vim.api.nvim_create_autocmd("VimEnter", {
-		desc = "Prune sessions whose project directory is gone",
+		group = group,
 		once = true,
+		desc = "Prune sessions whose project directory is gone",
 		callback = function()
-			require("project-manager.actions.pruner").prune_stale_sessions({ notify = false })
+			require("project-manager.session").prune({ notify = false })
 		end,
 	})
-
 	vim.api.nvim_create_autocmd("VimEnter", {
-		desc = "Restore a project explicitly launched by the project picker",
+		group = group,
 		once = true,
+		desc = "Open the project a picker launched this instance for",
 		callback = function()
-			-- Create directory-selected projects in their own process without changing the launcher's workspace.
-			local directory = vim.env.NVIM_PROJECT_DIRECTORY
-			vim.env.NVIM_PROJECT_DIRECTORY = nil
-			if directory and directory ~= "" then
-				vim.env.NVIM_PROJECT_SESSION = nil
-				vim.schedule(function()
-					local root = path_util.normalize(directory)
-					if not root or vim.fn.isdirectory(root) ~= 1 then
-						vim.notify("Project directory does not exist", vim.log.levels.ERROR)
-						return
-					end
-					vim.cmd({ cmd = "cd", args = { root }, mods = { noautocmd = true } })
-					local sessions = require("auto-session")
-					if project_state.session_exists(root) then
-						if sessions.restore_session(nil, { show_message = false }) then
-							project_state.set_open(true, root)
-						end
-					else
-						vim.cmd.enew()
-						project_state.set_open(true, root)
-						sessions.save_session(nil, { show_message = false })
-					end
-				end)
-				return
-			end
-			-- Only picker-launched instances receive this marker, so ordinary files stay file-only.
-			local requested_session = vim.env.NVIM_PROJECT_SESSION
-			if requested_session and requested_session ~= "" then
-				vim.env.NVIM_PROJECT_SESSION = nil
-				project_state.set_open(true, (path_util.parse_session_name(requested_session)))
-				vim.schedule(function()
-					if
-						not require("auto-session").restore_session(
-							requested_session,
-							{ is_startup_autorestore = true, show_message = false }
-						)
-					then
-						project_state.set_open(false)
-					end
-				end)
-			end
+			require("project-manager.launch").restore_requested()
 		end,
 	})
 end

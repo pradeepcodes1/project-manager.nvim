@@ -1,5 +1,5 @@
+-- Reset the editor to a clean workspace for the open project.
 local M = {}
-local project_paths = require("project-manager.paths")
 
 --- Collapse the layout down to one window. Floats go first, since `:only`
 --- leaves them behind; then the other tab pages, then the other windows. The
@@ -36,7 +36,7 @@ end
 --- here is worth losing an edit over. Unmodified files outside the project are
 --- cleared too, since a reset must not leak buffers opened from another project.
 function M.reset()
-	local root = project_paths.current_root()
+	local root = require("project-manager.root").current()
 	if not root then
 		return false
 	end

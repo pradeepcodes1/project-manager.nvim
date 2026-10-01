@@ -1,29 +1,17 @@
--- one spelling of "shell out and read the answer", for the handful of external
--- tools this config leans on: git, rg, chezmoi, onefetch, kitty, neovide.
---
--- Every caller here used to repeat the same four steps -- spawn, check the exit
--- code, trim the output, decide that empty means nothing -- and disagree about
--- one of them. This module makes that one decision: a command that fails, is
+-- One spelling of "shell out and read the answer". A command that fails, is
 -- not installed, or says nothing at all answers nil.
 local M = {}
 
+--- Trimmed stdout, or nil when the command failed or printed nothing.
+---
 --- vim.system raises rather than returning a code when the executable is
---- missing (uv_spawn ENOENT), so every capture is wrapped: a tool that is not
---- installed is the same answer as a tool that had nothing to say. Only
---- yank.lua guarded for this before, which is why a missing `chezmoi` used to
---- throw out of the explorer's BufEnter.
-local function run(argv, opts)
+--- missing (uv_spawn ENOENT), so the capture is wrapped: a tool that is not
+--- installed is the same answer as a tool that had nothing to say.
+function M.capture(argv, opts)
 	local ok, result = pcall(function()
 		return vim.system(argv, vim.tbl_extend("force", { text = true }, opts or {})):wait()
 	end)
-
-	return ok and result or nil
-end
-
---- Trimmed stdout, or nil when the command failed or printed nothing.
-function M.capture(argv, opts)
-	local result = run(argv, opts)
-	if not result or result.code ~= 0 then
+	if not ok or result.code ~= 0 then
 		return nil
 	end
 
@@ -31,35 +19,15 @@ function M.capture(argv, opts)
 	return output ~= "" and output or nil
 end
 
---- stdout split on newlines, empty on failure. Deliberately not built on
---- capture(): these are log lines, and trimming the blob would eat leading
---- whitespace from the first one. A grep with no matches exits 1 and lands
---- here as {} rather than as an error.
-function M.lines(argv, opts)
-	local result = run(argv, opts)
-	if not result or result.code ~= 0 then
-		return {}
-	end
-
-	local output = (result.stdout or ""):gsub("\n$", "")
-	return output == "" and {} or vim.split(output, "\n", { plain = true })
-end
-
---- `git -C root ...`. nil root answers nil rather than running git against the
---- cwd, which is never what a caller holding a maybe-root wants.
-function M.git(root, ...)
+--- A branch name to show. `--abbrev-ref` answers the literal "HEAD" on a
+--- detached head, which is the honest label. A nil root answers nil rather
+--- than running git against the cwd.
+function M.git_branch(root)
 	if type(root) ~= "string" or root == "" then
 		return nil
 	end
 
-	return M.capture(vim.list_extend({ "git", "-C", root }, { ... }))
-end
-
---- A branch name to show. `--abbrev-ref` answers the literal "HEAD" on a
---- detached head, which is the honest label; yank.lua wants nil there instead
---- and asks for `symbolic-ref --quiet` directly.
-function M.git_branch(root)
-	return M.git(root, "rev-parse", "--abbrev-ref", "HEAD")
+	return M.capture({ "git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD" })
 end
 
 function M.has(name)
@@ -93,36 +61,6 @@ function M.detach(what, argv, opts)
 	end
 
 	return true
-end
-
---- The argv for a detached Kitty OS window at `root`, running the trailing
---- command or a plain shell when none is given.
-function M.kitty_argv(root, title, ...)
-	return vim.list_extend({ "kitty", "--detach", "--directory", root, "--title", title }, { ... })
-end
-
---- Every file rg will admit to, NUL-separated, with the directories no server
---- wants to index pruned. Not `--files-with-matches`: the point is the file
---- list itself, which project_lsp then classifies by filetype.
-function M.rg_files()
-	local command = { "rg", "--files", "--hidden", "--null" }
-	for _, directory in ipairs({
-		".git",
-		"node_modules",
-		".venv",
-		"venv",
-		"__pycache__",
-		"vendor",
-		"target",
-		"build",
-		"dist",
-		".next",
-		".gradle",
-	}) do
-		vim.list_extend(command, { "--glob", "!**/" .. directory .. "/**" })
-	end
-
-	return command
 end
 
 return M

@@ -1,0 +1,14 @@
+# match Neovim's tab-indented Lua style without reordering intentional requires.
+# StyLua configuration for Neovim Lua files
+# https://github.com/JohnnyMorganz/StyLua
+
+column_width = 120
+line_endings = "Unix"
+indent_type = "Tabs"
+indent_width = 4
+quote_style = "AutoPreferDouble"
+call_parentheses = "Always"
+collapse_simple_statement = "Never"
+
+[sort_requires]
+enabled = false
